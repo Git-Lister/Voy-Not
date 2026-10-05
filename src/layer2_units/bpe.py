@@ -120,11 +120,11 @@ def test_unit_stability_by_source(df: pd.DataFrame, vocab_size: int = 500) -> di
     slice if the source column is unavailable, split the corpus by quire):
     - Train BPE independently.
     - Compute Jaccard similarity of discovered unit sets vs. the reference.
-    - Return {source_or_slice: {"jaccard": float, "n_units": int}}."""
+    Return both corpus_stability (bootstrap) and per_quire_coverage (Jaccard vs full vocab),
+    plus unit_presence (how many quires each unit appears in)."""
     # Since transcription_source is "unknown" for all rows in current data,
     # split by quire instead
-    results = {}
-
+    
     # Get reference vocabulary from full corpus
     full_stream = extract_glyph_stream(df)
     ref_model = train_bpe(full_stream, vocab_size)
@@ -134,6 +134,8 @@ def test_unit_stability_by_source(df: pd.DataFrame, vocab_size: int = 500) -> di
         return {"error": "Failed to train reference model"}
 
     # Split by quire and train independently
+    per_quire_coverage = {}
+    quire_vocabs = {}
     for quire in df["quire"].dropna().unique():
         quire_df = df[df["quire"] == quire]
         quire_stream = extract_glyph_stream(quire_df)
@@ -143,14 +145,56 @@ def test_unit_stability_by_source(df: pd.DataFrame, vocab_size: int = 500) -> di
 
         quire_model = train_bpe(quire_stream, vocab_size)
         quire_vocab = set(_get_vocab(quire_model))
+        quire_vocabs[str(quire)] = quire_vocab
 
         if quire_vocab:
             intersection = ref_vocab & quire_vocab
             union = ref_vocab | quire_vocab
             jaccard = len(intersection) / len(union) if union else 0.0
-            results[str(quire)] = {"jaccard": jaccard, "n_units": len(quire_vocab)}
+            per_quire_coverage[str(quire)] = {"jaccard": jaccard, "n_units": len(quire_vocab)}
 
-    return results
+    # Corpus stability via bootstrap (using quire_resampling_stability)
+    # Get quire labels for bootstrap
+    quire_labels = []
+    for _, row in df.iterrows():
+        tokens = row.get("tokens", [])
+        quire = row.get("quire", "")
+        quire_labels.extend([quire] * len(tokens))
+    
+    bootstrap_results = quire_resampling_stability(full_stream, quire_labels, n_iterations=100, vocab_size=vocab_size)
+
+    # Unit presence: for each unit in ref_vocab, count how many quires it appears in
+    n_quires = len(quire_vocabs)
+    unit_presence_counts = {}
+    for unit in ref_vocab:
+        count = sum(1 for qv in quire_vocabs.values() if unit in qv)
+        unit_presence_counts[unit] = count
+
+    n_units_all = sum(1 for c in unit_presence_counts.values() if c == n_quires)
+    n_units_80pct = sum(1 for c in unit_presence_counts.values() if c >= 0.8 * n_quires)
+    n_units_50pct = sum(1 for c in unit_presence_counts.values() if c >= 0.5 * n_quires)
+
+    return {
+        "corpus_stability": {
+            "metric": "bootstrap_jaccard",
+            "mean": bootstrap_results.get("mean_jaccard", 0.0),
+            "std": bootstrap_results.get("std", 0.0),
+            "ci_95": bootstrap_results.get("ci_95", [0.0, 0.0]),
+            "n_iterations": bootstrap_results.get("n_iterations", 0),
+        },
+        "per_quire_coverage": {
+            "metric": "jaccard_vs_full_vocab",
+            "per_quire": per_quire_coverage,
+            "n_quires_above_0_5": sum(1 for v in per_quire_coverage.values() if v.get("jaccard", 0) >= 0.5),
+        },
+        "unit_presence": {
+            "metric": "fraction_of_quires_containing_unit",
+            "n_quires_total": n_quires,
+            "n_units_in_all_quires": n_units_all,
+            "n_units_in_80pct_quires": n_units_80pct,
+            "n_units_in_50pct_quires": n_units_50pct,
+        },
+    }
 
 
 def quire_resampling_stability(
@@ -262,29 +306,24 @@ def run_unit_discovery() -> dict:
     # Get vocabulary
     vocab = _get_vocab(model_dict)
 
-    # Test stability by source/quire
-    stability_by_source = test_unit_stability_by_source(df, vocab_size)
-
-    # Get quire labels for bootstrap
-    quire_labels = []
-    for _, row in df.iterrows():
-        tokens = row.get("tokens", [])
-        quire = row.get("quire", "")
-        quire_labels.extend([quire] * len(tokens))
-
-    # Bootstrap quire stability
-    bootstrap_results = quire_resampling_stability(glyph_stream, quire_labels, n_iterations=100, vocab_size=vocab_size)
+    # Test stability by source/quire (new format)
+    stability_results = test_unit_stability_by_source(df, vocab_size)
 
     # Attempt coordinate alignment (will be unavailable)
     coords = None  # No coordinates available
     alignment = align_units_with_coordinates(vocab, coords)
 
-    # Determine gate status
-    stable_units = sum(1 for v in stability_by_source.values() if v.get("jaccard", 0) >= 0.5)
+    # Determine gate status using NEW criterion:
+    # Pass: ≥50 units appear in ≥80% of quires
+    # Partial: 10–49 units appear in ≥80% of quires
+    # Fail: <10 units appear in ≥80% of quires
+    unit_presence = stability_results.get("unit_presence", {})
+    n_units_80pct = unit_presence.get("n_units_in_80pct_quires", 0)
+    
     gate_status = "fail"
-    if stable_units >= 50:
+    if n_units_80pct >= 50:
         gate_status = "pass"
-    elif stable_units > 0:
+    elif n_units_80pct >= 10:
         gate_status = "partial"
 
     # Prepare output
@@ -292,8 +331,7 @@ def run_unit_discovery() -> dict:
         "vocab_size": vocab_size,
         "n_units": len(vocab),
         "units": vocab,
-        "stability_by_source": stability_by_source,
-        "quire_bootstrap": bootstrap_results,
+        "stability_by_source": stability_results,
         "coordinate_alignment": alignment,
         "gate_status": gate_status,
         "backend": model_dict.get("backend", "unknown"),
@@ -312,13 +350,9 @@ def run_unit_discovery() -> dict:
         "gate_status": gate_status,
         "backend": model_dict.get("backend", "unknown"),
         "stability_summary": {
-            "n_slices_tested": len(stability_by_source),
-            "stable_units_count": stable_units,
-        },
-        "bootstrap_summary": {
-            "mean_jaccard": bootstrap_results.get("mean_jaccard"),
-            "std": bootstrap_results.get("std"),
-            "ci_95": bootstrap_results.get("ci_95"),
+            "corpus_stability": stability_results.get("corpus_stability", {}),
+            "per_quire_coverage": stability_results.get("per_quire_coverage", {}),
+            "unit_presence": stability_results.get("unit_presence", {}),
         },
         "output_file": str(output_path),
     }

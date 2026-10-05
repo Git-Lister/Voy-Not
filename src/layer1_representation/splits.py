@@ -1,6 +1,7 @@
 """Layer 1: Representation - Splits module. Filled by Brick 2, updated in Brick 3."""
 
 import json
+import random
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -32,7 +33,6 @@ def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
         raise ValueError("No quires found in DataFrame after normalization")
 
     # Shuffle quires deterministically
-    import random
     rng = random.Random(seed)
     quires_shuffled = quires.copy()
     rng.shuffle(quires_shuffled)
@@ -83,9 +83,10 @@ def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
     return manifest
 
 
-def verify_no_leakage(splits: dict, all_quires: list[str] | None = None) -> bool:
+def verify_no_leakage(splits: dict, all_quires: list[str] | None = None, total_rows: int | None = None) -> bool:
     """Assert no quire appears in multiple folds. Return True if clean.
-    If all_quires provided, also assert union of fold quires covers all_quires."""
+    If all_quires provided, also assert union of fold quires covers all_quires.
+    If total_rows provided, also assert every row index 0..total_rows-1 appears exactly once."""
     seen_quires = set()
     for fold in splits.get("folds", []):
         for quire in fold.get("quires", []):
@@ -95,15 +96,43 @@ def verify_no_leakage(splits: dict, all_quires: list[str] | None = None) -> bool
 
     if all_quires is not None:
         # Normalize all_quires for comparison
-        norm_all = {normalize_quire(q) for q in all_quires if q}
-        norm_folds = {q for q in seen_quires if q}
+        norm_all: set[str] = {normalize_quire(q) for q in all_quires if q}
+        norm_folds: set[str] = {q for q in seen_quires if q}
         if norm_all != norm_folds:
-            missing = norm_all - norm_folds
-            extra = norm_folds - norm_all
-            if missing:
-                print(f"verify_no_leakage: MISSING quires in folds: {missing}")
-            if extra:
-                print(f"verify_no_leakage: EXTRA quires in folds: {extra}")
+            missing_quires = norm_all - norm_folds
+            extra_quires = norm_folds - norm_all
+            if missing_quires:
+                print(f"verify_no_leakage: MISSING quires in folds: {missing_quires}")
+            if extra_quires:
+                print(f"verify_no_leakage: EXTRA quires in folds: {extra_quires}")
+            return False
+
+    if total_rows is not None:
+        # Check full coverage: every row index appears exactly once
+        # Load row_indices from individual fold files
+        from pathlib import Path
+
+        splits_dir = Path("data/splits")
+        all_indices: list[int] = []
+        for fold in splits.get("folds", []):
+            fold_file = splits_dir / f"fold_{fold['fold']}.json"
+            if fold_file.exists():
+                with open(fold_file) as f:
+                    fold_data = json.load(f)
+                all_indices.extend(fold_data.get("row_indices", []))
+            else:
+                print("verify_no_leakage: fold file not found: {fold_file}")
+                return False
+
+        if len(all_indices) != total_rows:
+            print(f"verify_no_leakage: row count mismatch - got {len(all_indices)}, expected {total_rows}")
+            return False
+        if len(set(all_indices)) != total_rows:
+            print("verify_no_leakage: duplicate row indices found")
+            return False
+        if set(all_indices) != set(range(total_rows)):
+            missing_rows = set(range(total_rows)) - set(all_indices)
+            print(f"verify_no_leakage: missing row indices: {sorted(missing_rows)[:10]}...")
             return False
 
     return True
@@ -124,7 +153,7 @@ def run_splits() -> dict:
     all_quires = [q for q in all_quires if q]
 
     # Verify
-    no_leakage = verify_no_leakage(manifest, all_quires)
+    no_leakage = verify_no_leakage(manifest, all_quires, total_rows=len(df))
 
     return {
         "manifest": manifest,

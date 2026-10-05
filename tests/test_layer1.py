@@ -16,6 +16,7 @@ from src.layer1_representation.parse import (
     parse_yale_coordinates,
     join_records,
     compare_transcriptions,
+    normalize_quire,
 )
 from src.layer1_representation.splits import create_splits, verify_no_leakage
 
@@ -107,7 +108,7 @@ def test_join_records_no_crash_on_missing_coords():
 
 
 def test_compare_transcriptions_computes_pcts():
-    """Synthetic mismatch data; asserts percentages sum sensibly (0-100)."""
+    """Synthetic mismatch data; asserts honest metrics are computed."""
     mismatch_data = [
         {"eva_agreement": True, "similarity_score": 1.0, "sources_present": ["ZL", "IT", "CD", "FG", "GC"]},
         {"eva_agreement": False, "similarity_score": 0.8, "sources_present": ["ZL", "IT", "CD"]},
@@ -119,18 +120,34 @@ def test_compare_transcriptions_computes_pcts():
 
     report = compare_transcriptions(mock_ds)
 
-    assert "total_lines" in report
-    assert report["total_lines"] == 5
-    assert "exact_match_pct" in report
-    assert 0 <= report["exact_match_pct"] <= 100
-    assert "high_similarity_pct" in report
-    assert 0 <= report["high_similarity_pct"] <= 100
-    assert "substantive_disagreement_pct" in report
-    assert 0 <= report["substantive_disagreement_pct"] <= 100
+    assert "n_lines" in report
+    assert report["n_lines"] == 5
+    assert "eva_agreement_pct" in report
+    assert 0 <= report["eva_agreement_pct"] <= 100
+    assert "similarity_score_stats" in report
+    stats = report["similarity_score_stats"]
+    assert "mean" in stats
+    assert "median" in stats
+    assert "std" in stats
+    assert "min" in stats
+    assert "max" in stats
+    assert "p10" in stats
+    assert "p50" in stats
+    assert "p90" in stats
+    assert "p99" in stats
+    assert "similarity_score_histogram" in report
+    hist = report["similarity_score_histogram"]
+    assert "bins" in hist
+    assert "counts" in hist
+    assert len(hist["bins"]) == 11  # 0.0 to 1.0 in 0.1 steps
+    assert len(hist["counts"]) == 10
+    assert sum(hist["counts"]) == 5
     assert "per_source_present_pct" in report
     for src in ["ZL", "IT", "CD", "FG", "GC"]:
         assert src in report["per_source_present_pct"]
         assert 0 <= report["per_source_present_pct"][src] <= 100
+    assert "notes" in report
+    assert "thresholds" in report["notes"].lower() or "arbitrary" in report["notes"].lower()
 
 
 def test_create_splits_no_quire_leakage():
@@ -180,6 +197,17 @@ def test_splits_manifest_written():
         json_str = json.dumps(manifest, default=str)
         parsed = json.loads(json_str)
         assert parsed["n_folds"] == 2
+
+
+def test_normalize_quire_preserves_single_letters():
+    """Test that normalize_quire preserves single-letter quires and strips leading q/Q from multi-letter."""
+    assert normalize_quire("qA") == "A"
+    assert normalize_quire("qB") == "B"
+    assert normalize_quire("Q") == "Q"
+    assert normalize_quire("A") == "A"
+    assert normalize_quire("") == ""
+    assert normalize_quire("q") == "q"  # single 'q' is preserved
+    assert normalize_quire("qQ") == "Q"  # multi-letter: strip leading q
 
 
 if __name__ == "__main__":

@@ -81,13 +81,11 @@ def fetch_yale_coordinates() -> dict:
         "https://raw.githubusercontent.com/YaleDHLab/voynich/master/voynich_data.json",
     ]
 
-    # Group B — Beinecke IIIF (authoritative, live) - multiple URL attempts with User-Agent
+    # Group B — Beinecke IIIF (authoritative, live) - targeted URLs per Brick 4
     iiif_urls = [
+        "https://collections.library.yale.edu/manifests/2002046",
+        "https://collections.library.yale.edu/catalog/2002046.jsonld",
         "https://collections.library.yale.edu/iiif/2/2002046/manifest",
-        "https://collections.library.yale.edu/iiif/3/2002046/manifest",
-        "https://collections.library.yale.edu/catalog/2002046.json",
-        "https://collections.library.yale.edu/catalog/2002046/manifest",
-        "https://collections.library.yale.edu/iiif/2/2002046",
     ]
 
     # Group C — Zenodo / archive mirrors (probe only)

@@ -219,34 +219,43 @@ def join_records(
 
 
 def compare_transcriptions(mismatch_dataset) -> dict:
-    """Using the fields (similarity_score, eva_agreement,
-    sources_present, sources_missing), compute:
-    - exact_match_pct: rows where eva_agreement is True (dataset's proxy for all 5 sources agreeing with EVA)
-    - high_similarity_pct: rows where similarity_score >= 0.98 (stricter threshold)
-    - substantive_disagreement_pct: rows where similarity_score < 0.95
-    - per_source_present_pct: percentage of lines where each source has text
-    Return as dict. Save to data/processed/mismatch_report.json."""
+    """Report the dataset's actual fields without inventing thresholds.
+    
+    Returns:
+    {
+        "n_lines": int,
+        "eva_agreement_pct": float,
+        "similarity_score_stats": {
+            "mean": float, "median": float, "std": float,
+            "min": float, "max": float,
+            "p10": float, "p50": float, "p90": float, "p99": float
+        },
+        "similarity_score_histogram": {
+            "bins": [0.0, 0.1, ..., 1.0],
+            "counts": [n0, n1, ..., n10]
+        },
+        "per_source_present_pct": {"ZL": float, "IT": float, "CD": float, "FG": float, "GC": float},
+        "notes": "No arbitrary thresholds. Report the distribution; downstream analysis may define thresholds with pre-registration."
+    }"""
+    import numpy as np
+    
     total = len(mismatch_dataset)
     if total == 0:
         return {}
 
-    exact_match = 0
-    high_similarity = 0
-    substantive_disagreement = 0
+    eva_agreement_count = 0
+    similarity_scores = []
     source_present_counts = {"ZL": 0, "IT": 0, "CD": 0, "FG": 0, "GC": 0}
 
     for row in mismatch_dataset:
-        # exact_match_pct: dataset's eva_agreement flag (proxy for all 5 agreeing with EVA)
+        # eva_agreement: dataset's flag
         if row.get("eva_agreement", False):
-            exact_match += 1
+            eva_agreement_count += 1
 
-        # high_similarity_pct: stricter threshold (>= 0.98)
+        # similarity_score: collect all values for statistics
         sim_score = row.get("similarity_score")
-        if sim_score is not None and sim_score >= 0.98:
-            high_similarity += 1
-        # substantive_disagreement_pct: below the original agreement threshold (< 0.95)
-        elif sim_score is not None and sim_score < 0.95:
-            substantive_disagreement += 1
+        if sim_score is not None:
+            similarity_scores.append(sim_score)
 
         # Per-source presence: count lines where source has text
         sources_present = row.get("sources_present", [])
@@ -254,6 +263,39 @@ def compare_transcriptions(mismatch_dataset) -> dict:
             for src in sources_present:
                 if src in source_present_counts:
                     source_present_counts[src] += 1
+
+    # Compute similarity_score statistics
+    if similarity_scores:
+        scores_arr = np.array(similarity_scores)
+        stats = {
+            "mean": float(np.mean(scores_arr)),
+            "median": float(np.median(scores_arr)),
+            "std": float(np.std(scores_arr)),
+            "min": float(np.min(scores_arr)),
+            "max": float(np.max(scores_arr)),
+            "p10": float(np.percentile(scores_arr, 10)),
+            "p50": float(np.percentile(scores_arr, 50)),
+            "p90": float(np.percentile(scores_arr, 90)),
+            "p99": float(np.percentile(scores_arr, 99)),
+        }
+        
+        # Histogram with 11 bins (0.0, 0.1, ..., 1.0)
+        bins = np.linspace(0.0, 1.0, 11)
+        counts, _ = np.histogram(scores_arr, bins=bins)
+        histogram = {
+            "bins": bins.tolist(),
+            "counts": counts.tolist(),
+        }
+    else:
+        stats = {
+            "mean": 0.0, "median": 0.0, "std": 0.0,
+            "min": 0.0, "max": 0.0,
+            "p10": 0.0, "p50": 0.0, "p90": 0.0, "p99": 0.0,
+        }
+        histogram = {
+            "bins": np.linspace(0.0, 1.0, 11).tolist(),
+            "counts": [0] * 10,
+        }
 
     # Per-source presence rate
     per_source_rates = {}
@@ -265,12 +307,12 @@ def compare_transcriptions(mismatch_dataset) -> dict:
             per_source_rates[src] = 0.0
 
     report = {
-        "total_lines": total,
-        "exact_match_pct": (exact_match / total * 100) if total > 0 else 0.0,
-        "normalized_match_pct": None,  # Would need normalized comparison
-        "high_similarity_pct": (high_similarity / total * 100) if total > 0 else 0.0,
-        "substantive_disagreement_pct": (substantive_disagreement / total * 100) if total > 0 else 0.0,
+        "n_lines": total,
+        "eva_agreement_pct": (eva_agreement_count / total * 100) if total > 0 else 0.0,
+        "similarity_score_stats": stats,
+        "similarity_score_histogram": histogram,
         "per_source_present_pct": per_source_rates,
+        "notes": "No arbitrary thresholds. Report the distribution; downstream analysis may define thresholds with pre-registration.",
     }
 
     # Save to file
