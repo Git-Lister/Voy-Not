@@ -1,10 +1,12 @@
-"""Layer 1: Representation - Splits module. Filled by Brick 2."""
+"""Layer 1: Representation - Splits module. Filled by Brick 2, updated in Brick 3."""
 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+
+from src.layer1_representation.parse import normalize_quire
 
 
 def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
@@ -21,10 +23,13 @@ def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
     if "quire" not in df.columns:
         raise ValueError("DataFrame must have 'quire' column for quire-level splits")
 
-    # Get unique quires
-    quires = df["quire"].dropna().unique().tolist()
+    # Get unique quires (normalized)
+    df["quire_norm"] = df["quire"].apply(normalize_quire)
+    quires = df["quire_norm"].dropna().unique().tolist()
+    # Filter out empty strings
+    quires = [q for q in quires if q]
     if not quires:
-        raise ValueError("No quires found in DataFrame")
+        raise ValueError("No quires found in DataFrame after normalization")
 
     # Shuffle quires deterministically
     import random
@@ -36,8 +41,8 @@ def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
     folds = []
     for i in range(n_folds):
         fold_quires = quires_shuffled[i::n_folds]
-        # Get row indices for this fold
-        fold_mask = df["quire"].isin(fold_quires)
+        # Get row indices for this fold (using normalized quire)
+        fold_mask = df["quire_norm"].isin(fold_quires)
         fold_indices = df[fold_mask].index.tolist()
 
         folds.append({
@@ -78,14 +83,29 @@ def create_splits(df: pd.DataFrame, n_folds: int = 5, seed: int = 42) -> dict:
     return manifest
 
 
-def verify_no_leakage(splits: dict) -> bool:
-    """Assert no quire appears in multiple folds. Return True if clean."""
+def verify_no_leakage(splits: dict, all_quires: list[str] | None = None) -> bool:
+    """Assert no quire appears in multiple folds. Return True if clean.
+    If all_quires provided, also assert union of fold quires covers all_quires."""
     seen_quires = set()
     for fold in splits.get("folds", []):
         for quire in fold.get("quires", []):
             if quire in seen_quires:
                 return False
             seen_quires.add(quire)
+
+    if all_quires is not None:
+        # Normalize all_quires for comparison
+        norm_all = {normalize_quire(q) for q in all_quires if q}
+        norm_folds = {q for q in seen_quires if q}
+        if norm_all != norm_folds:
+            missing = norm_all - norm_folds
+            extra = norm_folds - norm_all
+            if missing:
+                print(f"verify_no_leakage: MISSING quires in folds: {missing}")
+            if extra:
+                print(f"verify_no_leakage: EXTRA quires in folds: {extra}")
+            return False
+
     return True
 
 
@@ -98,8 +118,13 @@ def run_splits() -> dict:
     df = pd.read_json(joined_path, orient="records")
     manifest = create_splits(df)
 
+    # Get all quires from data (normalized)
+    df["quire_norm"] = df["quire"].apply(normalize_quire)
+    all_quires = df["quire_norm"].dropna().unique().tolist()
+    all_quires = [q for q in all_quires if q]
+
     # Verify
-    no_leakage = verify_no_leakage(manifest)
+    no_leakage = verify_no_leakage(manifest, all_quires)
 
     return {
         "manifest": manifest,

@@ -46,7 +46,7 @@ def test_parse_eva_lines_shape():
     assert all(isinstance(r, LineRecord) for r in records)
     assert records[0].page == "f1r"
     assert records[0].folio == "f1"
-    assert records[0].quire == "qA"
+    assert records[0].quire == "A"  # normalized: qA -> A
     assert records[0].line_number == 1
     assert records[0].tokens == ["ol", "daiin"]
     assert records[0].raw_text == "ol daiin"
@@ -78,7 +78,7 @@ def test_parse_metadata_merges_configs():
     assert all(isinstance(r, PageRecord) for r in records)
     assert records[0].page_id == "f1r"
     assert records[0].folio == "f1"
-    assert records[0].quire == "qA"
+    assert records[0].quire == "A"  # normalized: qA -> A
     assert records[0].section == "herbal"
     assert records[0].illustration_type == "P"
 
@@ -86,12 +86,12 @@ def test_parse_metadata_merges_configs():
 def test_join_records_no_crash_on_missing_coords():
     """Asserts join works with empty coordinates list."""
     lines = [
-        LineRecord(page="f1r", folio="f1", quire="qA", line_number=1, tokens=["ol", "daiin"], raw_text="ol daiin", transcription_source="unknown"),
-        LineRecord(page="f1v", folio="f1", quire="qA", line_number=2, tokens=["ol", "chedy"], raw_text="ol chedy", transcription_source="unknown"),
+        LineRecord(page="f1r", folio="f1", quire="A", line_number=1, tokens=["ol", "daiin"], raw_text="ol daiin", transcription_source="unknown"),
+        LineRecord(page="f1v", folio="f1", quire="A", line_number=2, tokens=["ol", "chedy"], raw_text="ol chedy", transcription_source="unknown"),
     ]
     pages = [
-        PageRecord(page_id="f1r", folio="f1", quire="qA", section="herbal", illustration_type="P"),
-        PageRecord(page_id="f1v", folio="f1", quire="qA", section="herbal", illustration_type="P"),
+        PageRecord(page_id="f1r", folio="f1", quire="A", section="herbal", illustration_type="P"),
+        PageRecord(page_id="f1v", folio="f1", quire="A", section="herbal", illustration_type="P"),
     ]
     coords: list[TokenCoordinate] = []
 
@@ -136,7 +136,7 @@ def test_compare_transcriptions_computes_pcts():
 def test_create_splits_no_quire_leakage():
     """Synthetic quire labels; asserts verify_no_leakage returns True."""
     df = pd.DataFrame({
-        "quire": ["qA"] * 10 + ["qB"] * 10 + ["qC"] * 10 + ["qD"] * 10 + ["qE"] * 10,
+        "quire": ["A"] * 10 + ["B"] * 10 + ["C"] * 10 + ["D"] * 10 + ["E"] * 10,
         "text": ["dummy"] * 50,
     })
 
@@ -156,7 +156,7 @@ def test_create_splits_no_quire_leakage():
 def test_splits_manifest_written():
     """Asserts data/splits/split_manifest.json exists and is valid JSON."""
     df = pd.DataFrame({
-        "quire": ["qA"] * 10 + ["qB"] * 10,
+        "quire": ["A"] * 10 + ["B"] * 10,
         "text": ["dummy"] * 20,
     })
 

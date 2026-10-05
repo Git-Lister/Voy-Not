@@ -81,11 +81,26 @@ def fetch_yale_coordinates() -> dict:
         "https://raw.githubusercontent.com/YaleDHLab/voynich/master/voynich_data.json",
     ]
 
-    # Group B — Beinecke IIIF (authoritative, live)
-    iiif_url = "https://collections.library.yale.edu/iiif/2/2002046/manifest"
+    # Group B — Beinecke IIIF (authoritative, live) - multiple URL attempts with User-Agent
+    iiif_urls = [
+        "https://collections.library.yale.edu/iiif/2/2002046/manifest",
+        "https://collections.library.yale.edu/iiif/3/2002046/manifest",
+        "https://collections.library.yale.edu/catalog/2002046.json",
+        "https://collections.library.yale.edu/catalog/2002046/manifest",
+        "https://collections.library.yale.edu/iiif/2/2002046",
+    ]
 
     # Group C — Zenodo / archive mirrors (probe only)
     zenodo_url = "https://zenodo.org/api/records?q=voynich+coordinates&size=5"
+
+    def fetch_with_ua(url: str, timeout: int = 30) -> dict | None:
+        """Fetch URL with User-Agent header."""
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; VoynichApparatus/1.0)"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return None
 
     status_dict: dict[str, object] = {
         "name": "yale_coordinates",
@@ -119,47 +134,49 @@ def fetch_yale_coordinates() -> dict:
             logger.warning(f"Failed to fetch from {url}: {e}")
             status_dict["error"] = str(e)
 
-    # Try Group B — Beinecke IIIF
-    try:
-        logger.info(f"Attempting to fetch Beinecke IIIF manifest from: {iiif_url}")
-        with urllib.request.urlopen(iiif_url, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        # Save raw IIIF manifest
-        raw_dir = Path("data/raw/beinecke_iiif")
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        raw_file = raw_dir / "manifest.json"
-        with open(raw_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    # Try Group B — Beinecke IIIF (multiple URLs with User-Agent)
+    for url in iiif_urls:
+        try:
+            logger.info(f"Attempting to fetch Beinecke IIIF manifest from: {url}")
+            data = fetch_with_ua(url)
+            if data is not None:
+                # Save raw IIIF manifest
+                raw_dir = Path("data/raw/beinecke_iiif")
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                slug = url.split("/")[-2] if url.endswith("/manifest") else url.split("/")[-1]
+                raw_file = raw_dir / f"{slug}.json"
+                with open(raw_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
 
-        status_dict["name"] = "beinecke_iiif"
-        status_dict["source_type"] = "iiif"
-        status_dict["url"] = iiif_url
-        status_dict["status"] = "partial"
-        status_dict["row_count"] = 1
-        status_dict["schema"] = {k: type(v).__name__ for k, v in data.items()} if isinstance(data, dict) else {}
-        status_dict["sha256"] = compute_sha256(data)
-        status_dict["error"] = None
-        logger.info(f"Successfully fetched Beinecke IIIF manifest from {iiif_url}")
-        return status_dict
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to fetch Beinecke IIIF manifest: {e}")
-        status_dict["error"] = str(e)
+                status_dict["name"] = "beinecke_iiif"
+                status_dict["source_type"] = "iiif"
+                status_dict["url"] = url
+                status_dict["status"] = "partial"
+                status_dict["row_count"] = 1
+                status_dict["schema"] = {k: type(v).__name__ for k, v in data.items()} if isinstance(data, dict) else {}
+                status_dict["sha256"] = compute_sha256(data)
+                status_dict["error"] = None
+                logger.info(f"Successfully fetched Beinecke IIIF manifest from {url}")
+                return status_dict
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to fetch from {url}: {e}")
+            status_dict["error"] = str(e)
 
     # Try Group C — Zenodo (probe only)
     try:
         logger.info(f"Probing Zenodo for alternatives: {zenodo_url}")
-        with urllib.request.urlopen(zenodo_url, timeout=30) as response:
-            zenodo_data = json.loads(response.read().decode("utf-8"))
-        hits = zenodo_data.get("hits", {}).get("hits", [])
-        alternates = []
-        for hit in hits[:5]:
-            alternates.append({
-                "title": hit.get("metadata", {}).get("title", "Unknown"),
-                "doi": hit.get("doi", "Unknown"),
-                "url": hit.get("links", {}).get("self", "Unknown"),
-            })
-        status_dict["discovered_alternates"] = alternates
-        logger.info(f"Found {len(alternates)} alternate records on Zenodo")
+        zenodo_data = fetch_with_ua(zenodo_url)
+        if zenodo_data:
+            hits = zenodo_data.get("hits", {}).get("hits", [])
+            alternates = []
+            for hit in hits[:5]:
+                alternates.append({
+                    "title": hit.get("metadata", {}).get("title", "Unknown"),
+                    "doi": hit.get("doi", "Unknown"),
+                    "url": hit.get("links", {}).get("self", "Unknown"),
+                })
+            status_dict["discovered_alternates"] = alternates
+            logger.info(f"Found {len(alternates)} alternate records on Zenodo")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to probe Zenodo: {e}")
         status_dict["error"] = str(e)

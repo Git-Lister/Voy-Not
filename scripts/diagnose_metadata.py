@@ -10,5 +10,5 @@ for cfg in configs:
         ds = load_dataset("Ched-ai/voynich-manuscript-metadata", cfg, split="train")
         print(f"--- config={cfg} | rows={len(ds)} | columns={ds.column_names}")
         print(f"    first row: {dict(ds[0])}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"--- config={cfg} | FAILED: {e}")

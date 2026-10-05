@@ -1,10 +1,22 @@
-"""Layer 1: Representation - Parse module. Filled by Brick 2."""
+"""Layer 1: Representation - Parse module. Filled by Brick 2, updated in Brick 3."""
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+
+
+def normalize_quire(q: str) -> str:
+    """Normalize quire labels by stripping leading 'q' or 'Q' if present.
+    Single-letter quires (A-Z) are preserved as-is."""
+    if not q or pd.isna(q):
+        return ""
+    q_str = str(q).strip()
+    # Only strip leading q/Q if the result would be a non-empty single letter
+    if len(q_str) > 1 and q_str[0].lower() == 'q':
+        return q_str[1:]
+    return q_str
 
 
 @dataclass
@@ -54,7 +66,7 @@ def parse_eva_lines(dataset) -> list[LineRecord]:
         page_id = row.get("page_id", "")
         # Extract folio from page_id (e.g., "f1r" -> "f1")
         folio = page_id[:-1] if page_id and page_id[-1] in ("r", "v") else page_id
-        quire = row.get("quire", "")
+        quire = normalize_quire(row.get("quire", ""))
         line_number = row.get("line_number", 0)
         text = row.get("text", "")
         text_clean = row.get("text_clean", text)
@@ -89,7 +101,7 @@ def parse_metadata(loaded_configs: dict) -> list[PageRecord]:
         for row in folios_ds:
             folio_id = row.get("folio_id", "")
             folio_map[folio_id] = {
-                "quire_id": row.get("quire_id", ""),
+                "quire_id": normalize_quire(row.get("quire_id", "")),
                 "section_value": row.get("section_value"),
                 "illustration_type": None,  # folios config doesn't have this directly
             }
@@ -99,7 +111,7 @@ def parse_metadata(loaded_configs: dict) -> list[PageRecord]:
         for row in pages_ds:
             page_id = row.get("page_id", "")
             folio = row.get("folio_id", "")
-            quire = row.get("quire_id", "")
+            quire = normalize_quire(row.get("quire_id", ""))
             section = row.get("section_value")
             illustration_type = row.get("illustration_type")
 
@@ -159,8 +171,9 @@ def join_records(
     pages: list[PageRecord],
     coords: list[TokenCoordinate],
 ) -> pd.DataFrame:
-    """Join into a unified DataFrame. Use an outer join on page.
-    Coordinates may be null; that's fine for now."""
+    """Join into a unified DataFrame. Use a LEFT JOIN from lines (EVA) so row count
+    equals the EVA line count exactly. Page-level fields attached where available,
+    nulls elsewhere."""
     # Convert to DataFrames
     lines_df = pd.DataFrame([{
         "page": lr.page,
@@ -180,13 +193,13 @@ def join_records(
         "illustration_type": pr.illustration_type,
     } for pr in pages])
 
-    # Merge lines with pages on page_id, avoiding suffix conflicts
+    # LEFT JOIN from lines to pages on page_id
     merged = pd.merge(
         lines_df,
         pages_df,
         left_on="page",
         right_on="page_id",
-        how="outer",
+        how="left",
         suffixes=("", "_page"),
     )
 
@@ -208,11 +221,10 @@ def join_records(
 def compare_transcriptions(mismatch_dataset) -> dict:
     """Using the fields (similarity_score, eva_agreement,
     sources_present, sources_missing), compute:
-    - exact_match_pct
-    - normalized_match_pct (if derivable)
-    - high_similarity_pct (similarity_score >= 0.95)
-    - substantive_disagreement_pct (similarity_score < 0.95)
-    - per-source agreement rates (for each of ZL, IT, CD, FG, GC)
+    - exact_match_pct: rows where eva_agreement is True (dataset's proxy for all 5 sources agreeing with EVA)
+    - high_similarity_pct: rows where similarity_score >= 0.98 (stricter threshold)
+    - substantive_disagreement_pct: rows where similarity_score < 0.95
+    - per_source_present_pct: percentage of lines where each source has text
     Return as dict. Save to data/processed/mismatch_report.json."""
     total = len(mismatch_dataset)
     if total == 0:
@@ -224,27 +236,26 @@ def compare_transcriptions(mismatch_dataset) -> dict:
     source_present_counts = {"ZL": 0, "IT": 0, "CD": 0, "FG": 0, "GC": 0}
 
     for row in mismatch_dataset:
-        # Check EVA agreement (all 5 sources agree with EVA)
+        # exact_match_pct: dataset's eva_agreement flag (proxy for all 5 agreeing with EVA)
         if row.get("eva_agreement", False):
             exact_match += 1
 
-        # Similarity score
+        # high_similarity_pct: stricter threshold (>= 0.98)
         sim_score = row.get("similarity_score")
-        if sim_score is not None and sim_score >= 0.95:
+        if sim_score is not None and sim_score >= 0.98:
             high_similarity += 1
-        else:
+        # substantive_disagreement_pct: below the original agreement threshold (< 0.95)
+        elif sim_score is not None and sim_score < 0.95:
             substantive_disagreement += 1
 
-        # Per-source agreement: check if source text matches EVA text
-        # The mismatch dataset has zl_text, it_text, etc. and we can compare with EVA
-        # But we don't have EVA text in this dataset. We'll use sources_present/missing
+        # Per-source presence: count lines where source has text
         sources_present = row.get("sources_present", [])
         if isinstance(sources_present, list):
             for src in sources_present:
                 if src in source_present_counts:
                     source_present_counts[src] += 1
 
-    # Per-source agreement rate: sources_present / total (where source has text)
+    # Per-source presence rate
     per_source_rates = {}
     for src in ["ZL", "IT", "CD", "FG", "GC"]:
         present = source_present_counts[src]
