@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voynich-generative-apparatus"
+version = "0.1.0"
+description = "A reproducible, falsifiable computational apparatus to investigate the Voynich Manuscript as a generative artifact"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = {text = "MIT"}
+authors = [
+  {name = "Voynich Generative Apparatus Contributors"}
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "pandas",
+  "matplotlib",
+  "scikit-learn",
+  "networkx",
+  "nolds",
+  "datasets",
+  "typer",
+  "rich",
+  "pydantic",
+  "pyyaml",
+]
+
+[project.optional-dependencies]
+voynich-extras = [
+  "fathon",
+  "pykeedy",
+  "ffbpe",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "ruff",
+  "mypy",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false

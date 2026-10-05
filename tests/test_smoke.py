@@ -1,0 +1,11 @@
+def test_scaffold_imports():
+    import src
+    import src.layer0_audit
+    import src.layer1_representation
+    import src.layer2_units
+    import src.layer3_mechanisms
+    import src.layer4_architecture
+    import src.layer5_engine
+    import src.shared
+    import src.shared.fractal
+    assert True
