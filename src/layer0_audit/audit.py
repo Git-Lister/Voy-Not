@@ -1,4 +1,4 @@
-"""Foundational audit module. Filled by Brick 1."""
+"""Foundational audit module. Filled by Brick 1, updated in Brick 2."""
 
 import hashlib
 import json
@@ -16,15 +16,16 @@ def compute_sha256(payload: object) -> str:
     return hashlib.sha256(serialized).hexdigest()
 
 
-def load_hf_dataset(name: str, repo_id: str) -> dict:
+def load_hf_dataset(name: str, repo_id: str, config: str | None = None) -> dict:
     """Load a Hugging Face dataset. Returns status dict with keys:
-    name, source_type, repo_id, status, row_count, schema, sha256, error."""
+    name, source_type, repo_id, config, status, row_count, schema, sha256, error."""
     from datasets import load_dataset
 
-    status_dict = {
+    status_dict: dict[str, object] = {
         "name": name,
         "source_type": "huggingface",
         "repo_id": repo_id,
+        "config": config,
         "status": "failed",
         "row_count": 0,
         "schema": {},
@@ -33,8 +34,9 @@ def load_hf_dataset(name: str, repo_id: str) -> dict:
     }
 
     try:
-        logger.info(f"Loading HF dataset: {repo_id}")
-        ds = load_dataset(repo_id, split="train")
+        config_str = f" (config={config})" if config else ""
+        logger.info(f"Loading HF dataset: {repo_id}{config_str}")
+        ds = load_dataset(repo_id, config, split="train")
         row_count = len(ds)
         columns = ds.column_names
         schema = {col: str(ds.features[col].dtype) if hasattr(ds.features[col], "dtype") else str(type(ds.features[col])) for col in columns}
@@ -66,15 +68,24 @@ def load_hf_dataset(name: str, repo_id: str) -> dict:
 
 
 def fetch_yale_coordinates() -> dict:
-    """Attempt to fetch YaleDHLab coordinates from GitHub. Returns status dict:
-    name, source_type, url, status, row_count, schema, sha256, error."""
+    """Attempt to fetch YaleDHLab coordinates from GitHub and Beinecke IIIF.
+    Returns status dict with name, source_type, url, status, row_count, schema, sha256, error, discovered_alternates."""
     import urllib.request
 
-    urls = [
+    # Group A — GitHub (archived YaleDHLab repo and mirrors)
+    github_urls = [
         "https://raw.githubusercontent.com/YaleDHLab/voynich/master/data/coordinates.json",
         "https://raw.githubusercontent.com/YaleDHLab/voynich/main/data/coordinates.json",
         "https://raw.githubusercontent.com/YaleDHLab/voynich/master/voynich_coordinates.json",
+        "https://raw.githubusercontent.com/YaleDHLab/voynich/master/data/coordinates.csv",
+        "https://raw.githubusercontent.com/YaleDHLab/voynich/master/voynich_data.json",
     ]
+
+    # Group B — Beinecke IIIF (authoritative, live)
+    iiif_url = "https://collections.library.yale.edu/iiif/2/2002046/manifest"
+
+    # Group C — Zenodo / archive mirrors (probe only)
+    zenodo_url = "https://zenodo.org/api/records?q=voynich+coordinates&size=5"
 
     status_dict: dict[str, object] = {
         "name": "yale_coordinates",
@@ -85,9 +96,11 @@ def fetch_yale_coordinates() -> dict:
         "schema": {},
         "sha256": None,
         "error": None,
+        "discovered_alternates": [],
     }
 
-    for url in urls:
+    # Try Group A
+    for url in github_urls:
         try:
             logger.info(f"Attempting to fetch Yale coordinates from: {url}")
             with urllib.request.urlopen(url, timeout=30) as response:
@@ -101,10 +114,55 @@ def fetch_yale_coordinates() -> dict:
                 status_dict["schema"] = {k: type(v).__name__ for k, v in data.items()} if isinstance(data, dict) else {}
             status_dict["sha256"] = compute_sha256(data)
             logger.info(f"Successfully fetched Yale coordinates from {url}")
-            break
+            return status_dict
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to fetch from {url}: {e}")
             status_dict["error"] = str(e)
+
+    # Try Group B — Beinecke IIIF
+    try:
+        logger.info(f"Attempting to fetch Beinecke IIIF manifest from: {iiif_url}")
+        with urllib.request.urlopen(iiif_url, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        # Save raw IIIF manifest
+        raw_dir = Path("data/raw/beinecke_iiif")
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        raw_file = raw_dir / "manifest.json"
+        with open(raw_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        status_dict["name"] = "beinecke_iiif"
+        status_dict["source_type"] = "iiif"
+        status_dict["url"] = iiif_url
+        status_dict["status"] = "partial"
+        status_dict["row_count"] = 1
+        status_dict["schema"] = {k: type(v).__name__ for k, v in data.items()} if isinstance(data, dict) else {}
+        status_dict["sha256"] = compute_sha256(data)
+        status_dict["error"] = None
+        logger.info(f"Successfully fetched Beinecke IIIF manifest from {iiif_url}")
+        return status_dict
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to fetch Beinecke IIIF manifest: {e}")
+        status_dict["error"] = str(e)
+
+    # Try Group C — Zenodo (probe only)
+    try:
+        logger.info(f"Probing Zenodo for alternatives: {zenodo_url}")
+        with urllib.request.urlopen(zenodo_url, timeout=30) as response:
+            zenodo_data = json.loads(response.read().decode("utf-8"))
+        hits = zenodo_data.get("hits", {}).get("hits", [])
+        alternates = []
+        for hit in hits[:5]:
+            alternates.append({
+                "title": hit.get("metadata", {}).get("title", "Unknown"),
+                "doi": hit.get("doi", "Unknown"),
+                "url": hit.get("links", {}).get("self", "Unknown"),
+            })
+        status_dict["discovered_alternates"] = alternates
+        logger.info(f"Found {len(alternates)} alternate records on Zenodo")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to probe Zenodo: {e}")
+        status_dict["error"] = str(e)
 
     return status_dict
 
@@ -148,16 +206,15 @@ def run_audit() -> dict:
     sources = []
 
     # Load Hugging Face datasets
-    hf_datasets = [
-        ("vcat_eva", "Ched-ai/voynich-eva"),
-        ("vcat_metadata", "Ched-ai/voynich-manuscript-metadata"),
-        ("vcat_mismatch", "Ched-ai/voynich-transcription-mismatch"),
-    ]
+    # EVA and mismatch don't need config
+    sources.append(load_hf_dataset("vcat_eva", "Ched-ai/voynich-eva"))
+    sources.append(load_hf_dataset("vcat_mismatch", "Ched-ai/voynich-transcription-mismatch"))
 
-    for name, repo_id in hf_datasets:
-        sources.append(load_hf_dataset(name, repo_id))
+    # Metadata has 3 configs - load each
+    for config in ["pages", "folios", "quires"]:
+        sources.append(load_hf_dataset(f"vcat_metadata_{config}", "Ched-ai/voynich-manuscript-metadata", config=config))
 
-    # Fetch Yale coordinates
+    # Fetch Yale coordinates with fallback chain
     sources.append(fetch_yale_coordinates())
 
     # Generate manifest
