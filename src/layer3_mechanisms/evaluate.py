@@ -323,7 +323,7 @@ def compute_positional_vocab_divergence(tokenized: list[list[str]]) -> float | N
             token_positions[str(t)].append(line_idx / max(1, n_lines - 1))
 
     entropies: list[float] = []
-    for token, positions in token_positions.items():
+    for token, positions in token_positions.items():  # type: ignore[assignment]
         if len(positions) < 2:
             continue
         hist, _ = np.histogram(positions, bins=10, range=(0, 1), density=False)
