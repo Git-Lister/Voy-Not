@@ -37,7 +37,6 @@ dependencies = [
 [project.optional-dependencies]
 voynich-extras = [
   "fathon",
-  "pykeedy",
   "ffbpe",
 ]
 
@@ -51,6 +50,9 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voynich_generative_apparatus"]
 
 [tool.mypy]
 python_version = "3.11"

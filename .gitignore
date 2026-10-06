@@ -25,8 +25,12 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/observed_signature.json
+!data/processed/fractal_baseline.json
+!data/processed/mismatch_report.json
 data/splits/*
 !data/splits/.gitkeep
+!data/splits/split_manifest.json
 
 # Reports
 reports/*

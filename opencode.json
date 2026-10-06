@@ -1,6 +1,9 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["./AGENTS.md"],
+  "instructions": [
+    "./AGENTS.md",
+    ".opencode/context/**/*.md"
+  ],
   "permission": {
     "*": "ask",
     "edit": "allow",
@@ -10,7 +13,10 @@
       "uv *": "allow",
       "pytest *": "allow",
       "ruff *": "allow",
-      "mypy *": "allow"
+      "mypy *": "allow",
+      "python *": "allow",
+      ".venv\\Scripts\\python *": "allow",
+      "python3 *": "allow"
     }
   }
 }

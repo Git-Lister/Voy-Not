@@ -1,0 +1,21 @@
+{
+  "s1_conditional_glyph_entropy": 4.335847,
+  "s2_token_length_mean": 8.282908,
+  "s2_token_length_variance": 10.220061,
+  "s2_token_length_skew": 0.132765,
+  "s3_mi_plateau": 5.811719,
+  "s4_d1_agreement_onset": 0.003536,
+  "s4_d1_agreement_coda": 0.005304,
+  "s4_d1_agreement_ratio": 0.666667,
+  "s5_edge_mutual_information": 7.511933,
+  "s6_zipf_slope": -0.901293,
+  "s7_hapax_ratio": 0.700855,
+  "s8_lz77_compression_ratio": 0.997302,
+  "s9_quire_stability_mean": 0.76625,
+  "s10_cross_transcription_agreement": 0.970976,
+  "s11_positional_vocab_divergence": 1.643941,
+  "s12_page_template_transition_ll": null,
+  "s13_hurst_dfa": 0.653121,
+  "s14_multifractal_delta_h": 0.040701,
+  "s15_box_counting_dimension": 0.995072
+}

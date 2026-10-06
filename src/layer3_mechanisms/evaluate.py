@@ -308,8 +308,10 @@ def compute_cross_transcription_agreement(mismatch_df: "DataFrame | None") -> fl
 
 
 def compute_positional_vocab_divergence(tokenized: list[list[str]]) -> float | None:
-    """For each token, compute the entropy of its distribution across line positions
-    (normalized 0-1). Return the mean entropy across all tokens."""
+    """For each token, compute the Shannon entropy (bits) of its line-position
+    distribution. Positions are normalized to [0,1] and binned into 10 equal-width
+    bins. Returns the mean entropy across tokens that appear in >=2 lines.
+    Shannon entropy is always >= 0."""
     if not tokenized:
         return None
 
@@ -321,13 +323,15 @@ def compute_positional_vocab_divergence(tokenized: list[list[str]]) -> float | N
             token_positions[str(t)].append(line_idx / max(1, n_lines - 1))
 
     entropies: list[float] = []
-    for token, positions in token_positions.items():  # type: ignore[assignment]
+    for token, positions in token_positions.items():
         if len(positions) < 2:
             continue
-
-        # Bin positions into 10 bins
-        hist, _ = np.histogram(positions, bins=10, range=(0, 1), density=True)
-        probs = hist[hist > 0]
+        hist, _ = np.histogram(positions, bins=10, range=(0, 1), density=False)
+        total = hist.sum()
+        if total == 0:
+            continue
+        probs = hist / total
+        probs = probs[probs > 0]
         if len(probs) > 1:
             entropy = -np.sum(probs * np.log2(probs))
             entropies.append(entropy)

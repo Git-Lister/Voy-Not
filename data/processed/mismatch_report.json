@@ -1,0 +1,50 @@
+{
+  "n_lines": 5,
+  "eva_agreement_pct": 40.0,
+  "similarity_score_stats": {
+    "mean": 0.776,
+    "median": 0.8,
+    "std": 0.19975985582694036,
+    "min": 0.5,
+    "max": 1.0,
+    "p10": 0.54,
+    "p50": 0.8,
+    "p90": 0.992,
+    "p99": 0.9992
+  },
+  "similarity_score_histogram": {
+    "bins": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      1,
+      2
+    ]
+  },
+  "per_source_present_pct": {
+    "ZL": 80.0,
+    "IT": 60.0,
+    "CD": 60.0,
+    "FG": 60.0,
+    "GC": 60.0
+  },
+  "notes": "No arbitrary thresholds. Report the distribution; downstream analysis may define thresholds with pre-registration."
+}
