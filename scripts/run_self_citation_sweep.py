@@ -22,18 +22,16 @@ OUTPUT = Path("data/processed/mechanism_results_self_citation.json")
 def main() -> dict:
     bundle = load_data_bundle()
     intervals = load_tolerance_intervals()
-    # Use smaller sample for sweep speed (full 33k tokens is too slow)
-    n_tokens = 5000
-    seed = bundle.tokenized[:50]
+    n_tokens = bundle.token_count
+    seed = bundle.tokenized  # Use full observed corpus as seed
 
     grid = list(itertools.product(
-        [0.7],               # copy_prob (reduced grid)
+        [0.7, 0.85, 0.95],   # copy_prob — higher values are closer to Timm-Schinner
         [0.0, 1.0],          # grammar_strength
-        ["frequency"],       # source_weighting
     ))
 
     results = []
-    for copy_prob, grammar_strength, source_weighting in grid:
+    for copy_prob, grammar_strength in grid:
         # Balance remaining probability across mutation/insert/delete
         remainder = 1.0 - copy_prob
         params = SelfCitationParams(
@@ -41,7 +39,7 @@ def main() -> dict:
             mutation_prob=remainder * 0.6,
             insert_prob=remainder * 0.3,
             delete_prob=remainder * 0.1,
-            source_weighting=source_weighting,
+            source_weighting="frequency",
             grammar_strength=grammar_strength,
         )
         logger.info("config: copy=%.2f grammar=%.2f", copy_prob, grammar_strength)

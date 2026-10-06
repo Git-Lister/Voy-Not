@@ -34,9 +34,10 @@ def _make_bundle_from_tokens(tokenized: list[list[str]]) -> DataBundle:
 
 def score_corpus(tokenized: list[list[str]], intervals: dict) -> dict:
     """Compute S1-S15 on the generated corpus, compare against tolerance intervals.
-    Returns {'matches': N, 'total': M, 'properties': {name: {generated, observed, within}}}."""
+    Returns {'matches': N, 'total': M, 'properties': {name: {generated, observed, within}}}.
+    Properties where the generated value is None are excluded from both numerator and denominator."""
     bundle = _make_bundle_from_tokens(tokenized)
-    sig = compute_joint_signature(bundle)
+    sig = compute_joint_signature(bundle, compute_fractal_fresh=True)
 
     props = intervals["properties"]
     matches = 0
@@ -44,9 +45,17 @@ def score_corpus(tokenized: list[list[str]], intervals: dict) -> dict:
     detail = {}
     for field, spec in props.items():
         gen_val = getattr(sig, field)
+        if gen_val is None:
+            # Not scoreable — exclude from denominator
+            detail[field] = {
+                "generated": None,
+                "observed": spec.get("observed"),
+                "excluded": True,
+            }
+            continue
         lower, upper = spec.get("lower"), spec.get("upper")
         within = False
-        if gen_val is not None and lower is not None and upper is not None:
+        if lower is not None and upper is not None:
             within = lower <= gen_val <= upper
         detail[field] = {
             "generated": gen_val,

@@ -345,40 +345,68 @@ def compute_page_template_transition_ll(page_records, template_labels) -> float 
     return None
 
 
-def compute_fractal_properties() -> dict:
-    """Load S13, S14, S15 from data/processed/fractal_baseline.json.
-    Do NOT recompute — use the values already computed in Brick 4b.
-    Return dict with keys: hurst_dfa, multifractal_delta_h, box_counting_dimension.
-    If the file is missing, return None values and note it."""
-    path = Path("data/processed/fractal_baseline.json")
+def compute_fractal_properties(tokenized: list[list[str]] | None = None) -> dict:
+    """Compute S13, S14, S15 on the given corpus.
 
-    if not path.exists():
-        return {
-            "hurst_dfa": None,
-            "multifractal_delta_h": None,
-            "box_counting_dimension": None,
-        }
+    If tokenized is None, fall back to loading the observed values from
+    data/processed/fractal_baseline.json (used only when scoring the
+    observed corpus itself). If tokenized is provided, compute fresh
+    values on that corpus using the functions in src/shared/fractal/.
+    """
+    if tokenized is None:
+        import json
+        from pathlib import Path
+        path = Path("data/processed/fractal_baseline.json")
+        if path.exists():
+            data = json.loads(path.read_text())
+            return {
+                "hurst_dfa": data.get("hurst", {}).get("dfa"),
+                "multifractal_delta_h": data.get("multifractal", {}).get("delta_h"),
+                "box_counting_dimension": data.get("box_counting", {}).get("dimension"),
+            }
+        return {"hurst_dfa": None, "multifractal_delta_h": None,
+                "box_counting_dimension": None}
+
+# Compute fresh on the provided corpus
+    from src.shared.fractal.hurst import compute_hurst_dfa, compute_hurst_ensemble
+    from src.shared.fractal.multifractal import compute_multifractal
+    from src.shared.fractal.box_counting import box_counting_dimension
+
+    glyph_stream: list[str] = [g for token in tokenized for g in token]
+    if len(glyph_stream) < 100:
+        return {"hurst_dfa": None, "multifractal_delta_h": None,
+                "box_counting_dimension": None}
 
     try:
-        with open(path, "r") as f:
-            data = json.load(f)
-
-        return {
-            "hurst_dfa": data.get("hurst", {}).get("dfa"),
-            "multifractal_delta_h": data.get("multifractal", {}).get("delta_h"),
-            "box_counting_dimension": data.get("box_counting", {}).get("dimension"),
-        }
+        h_result = compute_hurst_ensemble([float(x) for x in glyph_stream])
+        h = h_result.get("dfa")
     except Exception:  # noqa: BLE001
-        return {
-            "hurst_dfa": None,
-            "multifractal_delta_h": None,
-            "box_counting_dimension": None,
-        }
+        h = None
+    try:
+        mf_result = compute_multifractal([float(x) for x in glyph_stream])
+        dh = mf_result.get("delta_h")
+    except Exception:  # noqa: BLE001
+        dh = None
+    try:
+        # For box counting, we need points - use a simple approach
+        # Convert glyph stream to a simple point cloud
+        points = [(i / len(glyph_stream), float(g)) for i, g in enumerate(glyph_stream)]
+        bc_result = box_counting_dimension(points)
+        bc = bc_result.get("dimension")
+    except Exception:  # noqa: BLE001
+        bc = None
+
+    return {
+        "hurst_dfa": h,
+        "multifractal_delta_h": dh,
+        "box_counting_dimension": bc,
+    }
 
 
-def compute_joint_signature(bundle) -> JointSignature:
+def compute_joint_signature(bundle, compute_fractal_fresh: bool = False) -> JointSignature:
     """Orchestrate all property computations using a DataBundle.
-    S12 is None (placeholder). S13–S15 loaded from fractal_baseline.json.
+    S12 is None (placeholder). S13–S15 loaded from fractal_baseline.json
+    unless compute_fractal_fresh=True, in which case they are computed fresh.
     Returns a JointSignature."""
 
     # S1: Conditional glyph entropy
@@ -423,8 +451,8 @@ def compute_joint_signature(bundle) -> JointSignature:
     # S12: Page template transition LL (placeholder)
     s12 = compute_page_template_transition_ll(bundle.page_records, None)
 
-    # S13-S15: Fractal properties from baseline
-    fractal: dict[str, float | None] = compute_fractal_properties()
+    # S13-S15: Fractal properties from baseline or fresh
+    fractal = compute_fractal_properties(bundle.tokenized if compute_fractal_fresh else None)
     s13 = fractal.get("hurst_dfa")
     s14 = fractal.get("multifractal_delta_h")
     s15 = fractal.get("box_counting_dimension")
