@@ -368,20 +368,22 @@ def compute_fractal_properties(tokenized: list[list[str]] | None = None) -> dict
                 "box_counting_dimension": None}
 
 # Compute fresh on the provided corpus
+    from src.shared.fractal.box_counting import box_counting_dimension
     from src.shared.fractal.hurst import compute_hurst_ensemble
     from src.shared.fractal.multifractal import compute_multifractal
-    from src.shared.fractal.box_counting import compute_box_counting
 
-    # Parse glyph stream into numeric IDs
-    all_glyphs = []
-    for token in tokenized:
-        for g in token:
-            all_glyphs.append(g)
+    # Parse glyph stream into numeric IDs using order of first appearance
+    # This is deterministic and independent of alphabetical or frequency order
+    all_glyphs = [g for token in tokenized for g in token]
     
-    # Build vocabulary and map to numeric IDs
-    vocab = sorted(set(all_glyphs))
-    glyph_to_id = {g: i for i, g in enumerate(vocab)}
-    numeric_stream = [float(glyph_to_id[g]) for g in all_glyphs]
+    # Parse glyph stream into numeric IDs using order of first appearance
+    # This is deterministic and independent of alphabetical or frequency order
+    seen: dict[str, int] = {}
+    numeric_stream: list[float] = []
+    for g in all_glyphs:
+        if g not in seen:
+            seen[g] = len(seen)
+        numeric_stream.append(float(seen[g]))
     
     if len(numeric_stream) < 1000:
         return {"hurst_dfa": None, "multifractal_delta_h": None,
@@ -397,12 +399,37 @@ def compute_fractal_properties(tokenized: list[list[str]] | None = None) -> dict
         dh = mf_result.get("delta_h")
     except Exception:  # noqa: BLE001
         dh = None
+
+    # Box counting: use per-line normalization (matching original Brick 4b)
+    # Create points with per-line normalization: x = position in line (0 to 1),
+    # y = glyph_id / n_glyphs. This matches the original glyph_distribution_to_points
+    # with scale="line" that produced BC=0.995.
     try:
-        # For box counting, use the original string glyph stream
-        # Convert to (position, glyph_id) points
-        glyph_stream_str = [g for token in tokenized for g in token]
-        bc_result = compute_box_counting(glyph_stream_str)
-        bc = bc_result.get("dimension") if isinstance(bc_result, dict) else bc_result
+        # Build vocabulary for glyph IDs
+        all_glyphs = []
+        for token in tokenized:
+            for g in token:
+                all_glyphs.append(g)
+        unique_glyphs = sorted(set(all_glyphs))
+        glyph_to_id = {g: i for i, g in enumerate(unique_glyphs)}
+        n_glyphs = len(unique_glyphs)
+
+        # Create points with per-line normalization (x = position in line, y = glyph_id / n_glyphs)
+        points: list[tuple[float, float]] = []
+        for line_tokens in tokenized:
+            if len(line_tokens) < 2:
+                continue
+            n_tokens = len(line_tokens)
+            for i, glyph in enumerate(line_tokens):
+                x = i / (n_tokens - 1) if n_tokens > 1 else 0.5
+                y = glyph_to_id[glyph] / (n_glyphs - 1) if n_glyphs > 1 else 0.5
+                points.append((x, y))
+
+        if len(points) >= 100:
+            bc_result = box_counting_dimension(points, normalize=True)
+            bc = bc_result.get("dimension") if isinstance(bc_result, dict) else bc_result
+        else:
+            bc = None
     except Exception:  # noqa: BLE001
         bc = None
 

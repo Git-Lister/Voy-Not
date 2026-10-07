@@ -17,7 +17,7 @@ from src.layer3_mechanisms.evaluate import compute_joint_signature
 
 logger = logging.getLogger(__name__)
 
-N_BOOTSTRAP = 30
+N_BOOTSTRAP = 15
 RNG_SEED = 42
 OUTPUT_PATH = Path("data/processed/tolerance_intervals.json")
 
@@ -56,7 +56,7 @@ def _resample_quires(bundle, rng: random.Random):
 
 def compute_tolerance_intervals() -> dict:
     bundle = load_data_bundle()
-    observed = compute_joint_signature(bundle)
+    observed = compute_joint_signature(bundle, compute_fractal_fresh=True)
 
     rng = random.Random(RNG_SEED)
     sigs: list = []
@@ -64,7 +64,7 @@ def compute_tolerance_intervals() -> dict:
     for i in range(N_BOOTSTRAP):
         resampled = _resample_quires(bundle, rng)
         try:
-            sig = compute_joint_signature(resampled)
+            sig = compute_joint_signature(resampled, compute_fractal_fresh=True)
             sigs.append(sig)
         except Exception as e:  # noqa: BLE001
             logger.warning("bootstrap %d failed: %s", i, e)

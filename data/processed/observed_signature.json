@@ -15,7 +15,7 @@
   "s10_cross_transcription_agreement": 0.970976,
   "s11_positional_vocab_divergence": 1.643941,
   "s12_page_template_transition_ll": null,
-  "s13_hurst_dfa": 0.653121,
-  "s14_multifractal_delta_h": 0.040701,
-  "s15_box_counting_dimension": 0.995072
+  "s13_hurst_dfa": 0.614117,
+  "s14_multifractal_delta_h": 0.576684,
+  "s15_box_counting_dimension": 1.727737
 }

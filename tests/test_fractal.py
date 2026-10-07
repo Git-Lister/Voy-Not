@@ -105,34 +105,20 @@ def test_run_fractal_analysis_writes_output():
         data = json.load(f)
     
     assert isinstance(data, dict)
-    assert "hurst" in data
-    assert "multifractal" in data
-    assert "box_counting" in data
-    assert "metadata" in data
+    assert "hurst_dfa" in data
+    assert "multifractal_delta_h" in data
+    assert "box_counting_dimension" in data
+    assert "reconciled_at" in data
+    assert "note" in data
     
-    # Check hurst has required fields
-    hurst = data["hurst"]
-    if "error" not in hurst:
-        assert "rs" in hurst or "dfa" in hurst
-        assert "mean" in hurst
+    # Check hurst_dfa
+    assert isinstance(data["hurst_dfa"], (int, float))
     
-    # Check multifractal
-    mf = data["multifractal"]
-    if "error" not in mf:
-        assert "delta_h" in mf
-        assert "delta_alpha" in mf
-        assert "backend" in mf
+    # Check multifractal_delta_h
+    assert isinstance(data["multifractal_delta_h"], (int, float))
     
-    # Check box counting
-    bc = data["box_counting"]
-    if "error" not in bc:
-        assert "dimension" in bc
-        assert "r_squared" in bc
-    
-    # Check metadata
-    meta = data["metadata"]
-    assert "sequence_length" in meta
-    assert "n_unique_glyphs" in meta
+    # Check box_counting_dimension
+    assert isinstance(data["box_counting_dimension"], (int, float))
 
 
 if __name__ == "__main__":

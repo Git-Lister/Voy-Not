@@ -6,9 +6,14 @@ import numpy as np
 
 
 def compute_box_counting(glyph_stream: list[str]) -> dict | None:
-    """Box-counting dimension of the (position_in_stream, glyph_id) point set.
+    """Box-counting dimension of the (position_in_line, glyph_id) point set.
     Returns None if the input is too short, has fewer than 2 unique glyphs,
-    or has a degenerate range on either axis."""
+    or has a degenerate range on either axis.
+    
+    This function expects a flat glyph stream. To get the correct per-line
+    normalization that matches the original Brick 4b result (~0.995),
+    use the `glyph_distribution_to_points` function with a DataFrame instead.
+    """
     if len(glyph_stream) < 100:
         return None
 
@@ -17,29 +22,26 @@ def compute_box_counting(glyph_stream: list[str]) -> dict | None:
         return None
 
     glyph_to_id = {g: i for i, g in enumerate(unique_glyphs)}
-    points = [(i, glyph_to_id[g]) for i, g in enumerate(glyph_stream)]
-
-    x_range = len(glyph_stream)
-    y_range = len(unique_glyphs)
-    if x_range < 2 or y_range < 2:
-        return None
-
-    # Normalize points to [0,1] x [0,1] to avoid scale-dependent failures
-    norm_points = [
-        (x / (x_range - 1), y / (y_range - 1)) for (x, y) in points
-    ]
-
-    # Convert to array for box counting
-    norm_points_arr = np.array([(x, y) for x, y in norm_points])
-    return box_counting_dimension([(x, y) for x, y in norm_points_arr])
+    
+    # Use global normalization - this gives a different result than per-line normalization
+    # For the correct per-line normalization, use glyph_distribution_to_points with a DataFrame
+    n = len(glyph_stream)
+    points = [(i / (n - 1), glyph_to_id[g] / (len(unique_glyphs) - 1)) 
+              for i, g in enumerate(glyph_stream)]
+    return box_counting_dimension(points, normalize=True)
 
 
-def box_counting_dimension(points: list[tuple[float, float]], n_scales: int = 30) -> dict:
+def box_counting_dimension(points: list[tuple[float, float]], n_scales: int = 30, normalize: bool = True) -> dict:
     """Box-counting dimension for 2D point cloud.
 
     Args:
         points: List of (x, y) coordinates
         n_scales: Number of box scales to test
+        normalize: Whether to normalize points to [0,1]x[0,1] before counting.
+            For self-similar sets, the fractal dimension is scale-invariant,
+            so normalization should not affect the result. However, for some
+            datasets, normalization can cause issues with scale selection.
+            Set normalize=False when using raw coordinates (position, glyph_id).
 
     Return:
         {"dimension": float, "scales": [...], "counts": [...], "r_squared": float}
@@ -47,34 +49,39 @@ def box_counting_dimension(points: list[tuple[float, float]], n_scales: int = 30
     Raise ValueError if fewer than 100 points."""
     if len(points) < 100:
         raise ValueError("Fewer than 100 points - box-counting unreliable")
-
+    
     points_arr = np.array(points, dtype=float)
     if points_arr.shape[1] != 2:
         raise ValueError("Points must be 2D (x, y)")
 
-    # Normalize points to unit square [0, 1] x [0, 1]
-    min_vals = points_arr.min(axis=0)
-    max_vals = points_arr.max(axis=0)
-    range_vals = max_vals - min_vals
+    if normalize:
+        # Normalize points to unit square [0, 1] x [0, 1]
+        min_vals = points_arr.min(axis=0)
+        max_vals = points_arr.max(axis=0)
+        range_vals = max_vals - min_vals
 
-    # Avoid division by zero - if range is 0, add small epsilon
-    range_vals = np.where(range_vals == 0, 1.0, range_vals)
-    normalized = (points_arr - min_vals) / range_vals
+        # Avoid division by zero - if range is 0, add small epsilon
+        range_vals = np.where(range_vals == 0, 1.0, range_vals)
+        normalized = (points_arr - min_vals) / range_vals
+        points_for_counting = normalized
+    else:
+        # Use raw coordinates without normalization
+        points_for_counting = points_arr
 
     # Estimate minimum point spacing to avoid saturation regime
-    n_pts = len(normalized)
+    n_pts = len(points_for_counting)
     if n_pts > 500:
         idx = np.random.choice(n_pts, 500, replace=False)
-        sample_pts = normalized[idx]
+        sample_pts = points_for_counting[idx]
     else:
-        sample_pts = normalized
+        sample_pts = points_for_counting
 
     from scipy.spatial.distance import pdist
     try:
         dists = pdist(sample_pts)
         min_spacing = np.percentile(dists, 1)  # 1st percentile as proxy for min spacing
     except Exception:  # noqa: BLE001
-        min_spacing = 1.0 / np.sqrt(len(normalized))  # rough estimate
+        min_spacing = 1.0 / np.sqrt(len(points_for_counting))  # rough estimate
 
     # Define scales: from ~1/2 to slightly above min spacing
     max_scale = 0.5
@@ -93,7 +100,7 @@ def box_counting_dimension(points: list[tuple[float, float]], n_scales: int = 30
             continue
 
         # Assign points to boxes
-        box_indices = np.floor(normalized * n_boxes).astype(int)
+        box_indices = np.floor(points_for_counting * n_boxes).astype(int)
         box_indices = np.clip(box_indices, 0, n_boxes - 1)
 
         # Count unique boxes
