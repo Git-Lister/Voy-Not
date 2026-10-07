@@ -5,6 +5,35 @@ from typing import Any
 import numpy as np
 
 
+def compute_box_counting(glyph_stream: list[str]) -> dict | None:
+    """Box-counting dimension of the (position_in_stream, glyph_id) point set.
+    Returns None if the input is too short, has fewer than 2 unique glyphs,
+    or has a degenerate range on either axis."""
+    if len(glyph_stream) < 100:
+        return None
+
+    unique_glyphs = sorted(set(glyph_stream))
+    if len(unique_glyphs) < 2:
+        return None
+
+    glyph_to_id = {g: i for i, g in enumerate(unique_glyphs)}
+    points = [(i, glyph_to_id[g]) for i, g in enumerate(glyph_stream)]
+
+    x_range = len(glyph_stream)
+    y_range = len(unique_glyphs)
+    if x_range < 2 or y_range < 2:
+        return None
+
+    # Normalize points to [0,1] x [0,1] to avoid scale-dependent failures
+    norm_points = [
+        (x / (x_range - 1), y / (y_range - 1)) for (x, y) in points
+    ]
+
+    # Convert to array for box counting
+    norm_points_arr = np.array([(x, y) for x, y in norm_points])
+    return box_counting_dimension([(x, y) for x, y in norm_points_arr])
+
+
 def box_counting_dimension(points: list[tuple[float, float]], n_scales: int = 30) -> dict:
     """Box-counting dimension for 2D point cloud.
 

@@ -12,6 +12,13 @@ from src.layer3_mechanisms.evaluate import (
 
 logger = logging.getLogger(__name__)
 
+# Fields that are not scoreable for generated corpora
+EXCLUDED_FIELDS = {
+    "s9_quire_stability_mean",
+    "s10_cross_transcription_agreement",
+    "s12_page_template_transition_ll",
+}
+
 
 def load_tolerance_intervals(path: str = "data/processed/tolerance_intervals.json") -> dict:
     return json.loads(Path(path).read_text())
@@ -44,6 +51,9 @@ def score_corpus(tokenized: list[list[str]], intervals: dict) -> dict:
     total = 0
     detail = {}
     for field, spec in props.items():
+        if field in EXCLUDED_FIELDS:
+            detail[field] = {"excluded": True, "reason": "not scoreable for generated corpus"}
+            continue
         gen_val = getattr(sig, field)
         if gen_val is None:
             # Not scoreable — exclude from denominator
@@ -51,6 +61,7 @@ def score_corpus(tokenized: list[list[str]], intervals: dict) -> dict:
                 "generated": None,
                 "observed": spec.get("observed"),
                 "excluded": True,
+                "reason": "generated value is None",
             }
             continue
         lower, upper = spec.get("lower"), spec.get("upper")

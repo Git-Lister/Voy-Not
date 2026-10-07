@@ -368,31 +368,41 @@ def compute_fractal_properties(tokenized: list[list[str]] | None = None) -> dict
                 "box_counting_dimension": None}
 
 # Compute fresh on the provided corpus
-    from src.shared.fractal.hurst import compute_hurst_dfa, compute_hurst_ensemble
+    from src.shared.fractal.hurst import compute_hurst_ensemble
     from src.shared.fractal.multifractal import compute_multifractal
-    from src.shared.fractal.box_counting import box_counting_dimension
+    from src.shared.fractal.box_counting import compute_box_counting
 
-    glyph_stream: list[str] = [g for token in tokenized for g in token]
-    if len(glyph_stream) < 100:
+    # Parse glyph stream into numeric IDs
+    all_glyphs = []
+    for token in tokenized:
+        for g in token:
+            all_glyphs.append(g)
+    
+    # Build vocabulary and map to numeric IDs
+    vocab = sorted(set(all_glyphs))
+    glyph_to_id = {g: i for i, g in enumerate(vocab)}
+    numeric_stream = [float(glyph_to_id[g]) for g in all_glyphs]
+    
+    if len(numeric_stream) < 1000:
         return {"hurst_dfa": None, "multifractal_delta_h": None,
                 "box_counting_dimension": None}
 
     try:
-        h_result = compute_hurst_ensemble([float(x) for x in glyph_stream])
+        h_result = compute_hurst_ensemble(numeric_stream)
         h = h_result.get("dfa")
     except Exception:  # noqa: BLE001
         h = None
     try:
-        mf_result = compute_multifractal([float(x) for x in glyph_stream])
+        mf_result = compute_multifractal(numeric_stream)
         dh = mf_result.get("delta_h")
     except Exception:  # noqa: BLE001
         dh = None
     try:
-        # For box counting, we need points - use a simple approach
-        # Convert glyph stream to a simple point cloud
-        points = [(i / len(glyph_stream), float(g)) for i, g in enumerate(glyph_stream)]
-        bc_result = box_counting_dimension(points)
-        bc = bc_result.get("dimension")
+        # For box counting, use the original string glyph stream
+        # Convert to (position, glyph_id) points
+        glyph_stream_str = [g for token in tokenized for g in token]
+        bc_result = compute_box_counting(glyph_stream_str)
+        bc = bc_result.get("dimension") if isinstance(bc_result, dict) else bc_result
     except Exception:  # noqa: BLE001
         bc = None
 

@@ -1,1 +1,19 @@
-[]
+[
+  {
+    "id": "H-A-001",
+    "name": "Self-Citation with Positional Selection",
+    "model_class": "A",
+    "pre_registered_threshold": ">=12 of 15 properties within +/- 2 SD",
+    "status": "falsified",
+    "date_registered": "2026-10-05",
+    "date_tested": "2026-10-06",
+    "best_config": {
+      "copy_prob": 0.85,
+      "grammar_strength": 0.0,
+      "source_weighting": "frequency"
+    },
+    "result": "7/14 properties matched",
+    "failure_mode": "Matches local (within-token) statistics: S1, S4, S8, S11. Fails all cross-token structure: S3 (MI plateau), S5 (edge MI), S6 (Zipf), S7 (hapax), S2_mean, S2_skew. Lacks mechanism for maintaining multiscale coherence.",
+    "notes": "Null baseline (11/14) is a partial null and preserves token-level structure by construction; its score is not a meaningful comparison."
+  }
+]
