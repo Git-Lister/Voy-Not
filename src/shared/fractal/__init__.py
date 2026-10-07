@@ -11,7 +11,7 @@ from .hurst import (
     compute_hurst_rs,
     hurst_by_quire,
 )
-from .multifractal import compute_multifractal, multifractal_by_quire
+from .multifractal import compute_multifractal, compute_multifractal_delta_h, multifractal_by_quire
 
 __all__ = [
     "box_counting_dimension",
@@ -20,6 +20,7 @@ __all__ = [
     "compute_hurst_ensemble",
     "compute_hurst_rs",
     "compute_multifractal",
+    "compute_multifractal_delta_h",
     "glyph_distribution_to_points",
     "hurst_by_quire",
     "multifractal_by_quire",

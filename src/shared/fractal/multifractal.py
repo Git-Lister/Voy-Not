@@ -116,6 +116,7 @@ def _compute_multifractal_numpy(sequence: list[float], q_range: tuple = (-5, 5),
     tau_q = []
     valid_q = []
     valid_scales = []
+    r_squared_per_q = []
     
     for q in q_vals:
         if len(Fq[q]) < 4:  # Need at least 4 points for reliable fit
@@ -134,6 +135,13 @@ def _compute_multifractal_numpy(sequence: list[float], q_range: tuple = (-5, 5),
             tau_q.append(float(q * h - 1))
             valid_q.append(float(q))
             valid_scales.append(valid_s)
+            
+            # Compute R² for this q
+            log_Fq_pred = coeffs[0] * log_s + coeffs[1]
+            ss_res = np.sum((log_Fq - log_Fq_pred) ** 2)
+            ss_tot = np.sum((log_Fq - np.mean(log_Fq)) ** 2)
+            r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+            r_squared_per_q.append(float(r2))
         except np.linalg.LinAlgError:
             continue
     
@@ -158,6 +166,9 @@ def _compute_multifractal_numpy(sequence: list[float], q_range: tuple = (-5, 5),
     delta_h = float(np.max(hq_arr) - np.min(hq_arr))
     delta_alpha = float(np.max(alpha) - np.min(alpha))
     
+    mean_r2 = float(np.mean(r_squared_per_q)) if r_squared_per_q else None
+    min_r2 = float(np.min(r_squared_per_q)) if r_squared_per_q else None
+    
     return {
         "q": valid_q,
         "hq": hq,
@@ -167,6 +178,10 @@ def _compute_multifractal_numpy(sequence: list[float], q_range: tuple = (-5, 5),
         "delta_h": delta_h,
         "delta_alpha": delta_alpha,
         "backend": "numpy",
+        "scales_used": valid_scales[0] if valid_scales else [],
+        "r_squared_per_q": r_squared_per_q,
+        "mean_r_squared": mean_r2,
+        "min_r_squared": min_r2,
     }
 
 
@@ -198,6 +213,44 @@ def compute_multifractal(sequence: list[float], q_range: tuple = (-5, 5), q_step
         return _compute_multifractal_numpy(sequence, q_range, q_step)
     except Exception as e:  # noqa: BLE001
         raise RuntimeError(f"Both fathon and numpy MF-DFA failed: {e}")
+
+
+def compute_multifractal_delta_h(sequence: list[float], q_range: tuple = (-5, 5), q_step: float = 0.5, return_diagnostics: bool = False) -> float | dict:
+    """Compute the multifractal delta_h (width of h(q) spectrum) for a sequence.
+    
+    Args:
+        sequence: Input numeric sequence
+        q_range: Tuple of (q_min, q_max)
+        q_step: Step size for q values
+        return_diagnostics: If True, return full diagnostic info instead of just delta_h
+    
+    Returns:
+        float (delta_h) or dict with diagnostics if return_diagnostics=True
+    """
+    result = compute_multifractal(sequence, q_range, q_step)
+    dh = result.get("delta_h", 0.0)
+    
+    if return_diagnostics:
+        def _to_list(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, list):
+                return [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in obj]
+            return obj
+        
+        return {
+            "delta_h": result.get("delta_h", 0.0),
+            "q_values": _to_list(result.get("q", [])),
+            "h_q": _to_list(result.get("hq", [])),
+            "tau_q": _to_list(result.get("tau_q", [])),
+            "alpha": _to_list(result.get("alpha", [])),
+            "f_alpha": _to_list(result.get("f_alpha", [])),
+            "scales_used": _to_list(result.get("scales_used", [])),
+            "r_squared_per_q": _to_list(result.get("r_squared_per_q", [])),
+            "mean_r_squared": result.get("mean_r_squared"),
+            "min_r_squared": result.get("min_r_squared"),
+        }
+    return dh
 
 
 def multifractal_by_quire(df: Any, value_column: str) -> dict:

@@ -17,7 +17,7 @@ from src.layer3_mechanisms.evaluate import compute_joint_signature
 
 logger = logging.getLogger(__name__)
 
-N_BOOTSTRAP = 15
+N_BOOTSTRAP = 30
 RNG_SEED = 42
 OUTPUT_PATH = Path("data/processed/tolerance_intervals.json")
 
